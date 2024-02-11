@@ -4,7 +4,8 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-torch = 2.1
+datasets = "*"
+torch = {version = "==2.2+cpu", index = "pytorch"}
 
 [dev-packages]
 
