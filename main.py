@@ -12,7 +12,7 @@ input_dim = len(chars)
 char_to_i = {c: i for i, c in enumerate(chars)}
 i_to_char = {i: c for i, c in enumerate(chars)}
 context_size = 8
-print_loss_every_n_steps = 100
+print_loss_every_n_steps = 1000
 
 
 class Net(torch.nn.Module):
@@ -23,18 +23,18 @@ class Net(torch.nn.Module):
     def forward(self, x):
         # one hot encoding
         # x: (T)
-        x = torch.nn.functional.one_hot(x, input_dim)
+        x = torch.nn.functional.one_hot(x, input_dim).float()
         # x: (T, input_dim)
         x = self.logits(x)
         # x: (T, input_dim)
-        p = torch.nn.functional.softmax(x, dim=-1)
         # p: (T, input_dim)
-        return p
+        return x
 
     def generate(self, max_tokens):
         ids = [char_to_i['\n']]
         for _ in range(max_tokens):
-            p = self(torch.tensor(ids))[-1, :]
+            logits = self(torch.tensor(ids))[-1, :]
+            p = torch.nn.functional.softmax(logits, dim=-1)
             next_id = torch.multinomial(p, 1).item()
             ids.append(next_id)
         return ''.join(i_to_char[i] for i in ids)
@@ -45,7 +45,7 @@ def encode(string: str):
     return torch.tensor(indices)
 
 
-def evaluate_split(net: Net, split: str, steps: int=100) -> Net:
+def evaluate_split(net: Net, split: str, steps: int=100) -> float:
     criterion = torch.nn.CrossEntropyLoss()
     data = all_data[split]
     tot = 0
@@ -60,16 +60,15 @@ def evaluate_split(net: Net, split: str, steps: int=100) -> Net:
             y_hat = net(x)
             loss = criterion(y_hat, y)
             tot += loss.item()
-    print(tot / steps)
+    return tot / steps
 
 
-def train(net, steps=10000) -> Net:
-    optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
+def train(net: Net, steps: int=10000, learning_rate: float=1e-3):
+    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
     criterion = torch.nn.CrossEntropyLoss()
     for i in range(steps):
         if i % print_loss_every_n_steps == 0:
-            for split in ['train', 'test']:
-                print(f'Loss on {split} at step {i}: ', end='')
+            print(f'Step {i}: {evaluate_split(net, "train")} (train), {evaluate_split(net, "test")} (test)')
         position = torch.randint(low=0, high=len(all_data['train']) - context_size - 1, size=(1,)).item()
         string = all_data['train'][position:position + context_size + 1]
         inp = encode(string)
@@ -80,12 +79,13 @@ def train(net, steps=10000) -> Net:
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    return net
 
 
 def main():
-    net = train(Net())
-    print(net.generate(1000))
+    net = Net()
+    train(net)
+    print(repr(net.generate(1000)))
+    pass
 
 
 if __name__ == '__main__':
